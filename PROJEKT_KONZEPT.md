@@ -26,6 +26,10 @@ Der Fokus der automatisierten Scans liegt auf drei Hauptbereichen der Panos.ai I
 - **CI/CD-Integration:** Da Nuclei als Docker-Image oder über GitHub Actions ausführbar ist, kann es nahtlos in bestehende Deployments integriert werden.
 - **Ressourcenschonend:** Scans dauern in der Regel unter 2 Minuten, da Profile auf den spezifischen Tech-Stack (Next.js, Hono, AWS) zugeschnitten sind (Ausschluss irrelevanter Scans wie WordPress oder PHP).
 
+> [!IMPORTANT]
+> **Staging vs. Produktion:**
+> Sicherheitsüberprüfungen mittels Nuclei werden **ausschließlich** auf Staging-Umgebungen durchgeführt. Das Ausführen aktiver Fuzzing- oder Schwachstellen-Scans gegen die Live-Produktionsdatenbank (z. B. Supabase/RDS) oder Metabase-Instanzen birgt Risiken für die Systemverfügbarkeit und könnte Daten korrumpieren. Eine strikte Trennung stellt sicher, dass Produktionssysteme unbeeinträchtigt bleiben und Testdaten nicht verfälscht werden.
+
 ---
 
 ## 2. Warum das Tool "Nuclei"?
@@ -60,11 +64,29 @@ Die Implementierung dieser Pipeline trägt direkt zur Einhaltung des **NIST CSF 
 * **Identify (ID):** Wir identifizieren Schwachstellen und Fehlkonfigurationen in unseren Assets (Next.js, Hono, AWS) und priorisieren sie nach Schweregrad.
 * **Protect (PR):** Durch das Scannen von Client-Bundles verhindern wir aktiv, dass sensible API-Schlüssel (z. B. AWS, Hubspot, Linear) nach außen dringen.
 * **Detect (DE):** Kontinuierliche Sicherheitsüberprüfungen als Teil des CI/CD-Prozesses erkennen Schwachstellen sofort bei jedem neuen Release.
-* **Respond (RS):** Die direkte Integration mit Linear sorgt für eine sofortige Eskalation an das Entwickler-Team. Gefundene Schwachstellen werden automatisch in das Entwickler-Board eingepflegt.
+* **Respond (RS):** Die direkte Integration mit Linear sorgt für eine sofortige Escalation an das Entwickler-Team. Gefundene Schwachstellen werden automatisch in das Entwickler-Board eingepflegt.
 
 ---
 
-## 4. Projekt-Struktur & Implementierung
+## 4. Secrets-Management, Autorisierung & Rechtlicher Rahmen
+
+### Secrets-Management
+Zur Absicherung der sensiblen API-Schlüssel werden folgende Standards implementiert:
+- **GitHub Secrets:** Anmeldedaten wie der `LINEAR_API_KEY` und die `LINEAR_TEAM_ID` dürfen unter keinen Umständen im Repository eingecheckt werden. Sie werden als verschlüsselte Repository-Secrets in GitHub Actions hinterlegt und zur Laufzeit als Umgebungsvariablen an das Integrations-Skript übergeben.
+
+### Empfohlener AWS OIDC-Workflow
+Um langfristige AWS-Zugangsdaten (AWS Access Key ID & Secret Access Key) zu vermeiden, empfehlen wir für AWS-Infrastrukturprüfungen den **AWS OIDC (OpenID Connect) Workflow**:
+- GitHub Actions authentifiziert sich direkt über einen vordefinierten OpenID Connect Identity Provider bei AWS IAM.
+- GitHub Actions fordert eine kurzlebige, temporäre Session-Rolle (AssumeRoleWithWebIdentity) an.
+- Diese Rolle besitzt ausschließlich Leserechte (ReadOnly) auf die zu überprüfenden Ressourcen (z. B. S3 Bucket Configurations, Route 53 DNS). Dadurch entfällt das Risiko von credential leaks vollständig.
+
+### Rechtlicher Rahmen
+- **Owner Consent & Scope:** Automatisierte Scans dürfen rechtlich nur gegen Server und Domains ausgeführt werden, für die Panos.ai die explizite Eigentümerschaft besitzt und für die ein schriftliches Einverständnis der Geschäftsführung / des CTOs vorliegt.
+- **Konformität (Deutschland/EU):** Unberechtigtes Scannen fremder Systeme fällt unter § 202a StGB (Ausspähen von Daten) oder entsprechende EU-Richtlinien. Unsere Pipeline läuft durch die Beschränkung auf eigene Staging-Umgebungen in einem sicheren, legalen Rahmen.
+
+---
+
+## 5. Projekt-Struktur & Implementierung
 
 ### Struktur des Repositories
 Die Integration wird in einem dedizierten Git-Repository verwaltet:
@@ -97,20 +119,25 @@ graph TD
 
 ---
 
-## 5. Ergebnisse & Verwertung
+## 6. Ergebnisse, Verwertung & CI/CD-Gating
 
-Um Ticket-Spam im Entwickler-Board zu vermeiden, werden die Ergebnisse von Nuclei intelligent aufgeteilt:
+Um Ticket-Spam im Entwickler-Board zu vermeiden und kritische Releases abzusichern, werden Ergebnisse von Nuclei anhand der folgenden Matrix bewertet:
 
-1. **Kritische Befunde (High / Medium / Critical):**
-   - Jede relevante Schwachstelle wird automatisch in Linear als Ticket angelegt.
-   - **Deduplizierung:** Das Script prüft vor der Erstellung, ob bereits ein offenes Ticket mit demselben Titel existiert, um doppelte Aufgaben zu vermeiden.
-2. **Informative Befunde (Info / Low):**
-   - Werden nicht in Linear eingepflegt.
-   - Stattdessen werden sie in einer lokalen Datei namens `recon_summary.md` gesammelt, um dem Sicherheitsteam Übersicht über offene Ports, Serverversionen und Technologien zu geben.
+### CI/CD-Gating-Tabelle
+
+| Schweregrad (Severity) | Exit-Code | Build-Status | Aktion (Linear / Reporting) | Dringlichkeit (SLA) |
+| :--- | :---: | :--- | :--- | :--- |
+| **Critical** | `1` | ❌ Blockiert (Hard Fail) | Sofortige Ticket-Erstellung in Linear | Sofortige Behebung (< 24 Std.) |
+| **High** | `1` | ❌ Blockiert (Hard Fail) | Sofortige Ticket-Erstellung in Linear | Behebung innerhalb von 3 Tagen |
+| **Medium** | `0` | ⚠️ Warnung (Soft Fail) | Automatische Ticket-Erstellung in Linear | Behebung im nächsten Sprint |
+| **Low** | `0` | ✅ Erfolgreich | Eintrag in `recon_summary.md` | Überprüfung bei Bedarf |
+| **Info** | `0` | ✅ Erfolgreich | Eintrag in `recon_summary.md` | Keine Behebung erforderlich |
+
+- **Deduplizierung:** Das Skript prüft vor der Erstellung eines Tickets in Linear stets, ob bereits ein offenes Ticket mit demselben Titel existiert, um Redundanzen zu vermeiden.
 
 ---
 
-## 6. Projektplan & Meilensteine (3-Wochen-Plan)
+## 7. Projektplan & Meilensteine (3-Wochen-Plan)
 
 Für die Überwachung des Bearbeitungsfortschritts wurden entsprechende Issues im Linear-Board angelegt:
 
@@ -139,3 +166,18 @@ Für die Überwachung des Bearbeitungsfortschritts wurden entsprechende Issues i
   - Integration als GitHub Action für regelmäßige automatische Scans.
 * **Meilenstein 3.4: Dokumentation & Abschlusspräsentation**
   - Erstellung des Benutzerhandbuchs und Vorstellung des Systems.
+
+---
+
+## 8. Go-Live-Checkliste
+
+Vor dem vollständigen Rollout der Pentest-Pipeline in der CI/CD-Pipeline müssen die folgenden Schritte abgearbeitet sein:
+
+- [ ] **1. Schriftliche Freigabe (CTO/Management):** Einholen der formellen Genehmigung für das Scannen der definierten Domains.
+- [ ] **2. Targets verifizieren:** Bestätigen, dass ausschließlich Staging-Endpunkte in der Target-Liste hinterlegt sind (Ausschluss der Produktions-Targets).
+- [ ] **3. Secrets in GitHub hinterlegen:** Speichern des `LINEAR_API_KEY` und der `LINEAR_TEAM_ID` in den verschlüsselten GitHub Repository Secrets.
+- [ ] **4. AWS OIDC konfigurieren:** Einrichtung des OpenID Connect Identity Providers und IAM Role Assumption in AWS für die passwortlose Authentifizierung.
+- [ ] **5. False Positive Profile anlegen:** Konfiguration der Filter für bekannte, akzeptierte Befunde, um Rauschen im Reporting zu verhindern.
+- [ ] **6. Sync-Skript testen:** Manueller Testlauf des `nuclei-to-linear.ts` Skripts und Validierung der Deduplizierung im Linear Board.
+- [ ] **7. GitHub Actions Workflow aktivieren:** Einspielen der `.github/workflows/security-scan.yml` und Test des Schedule-Crons.
+- [ ] **8. Team benachrichtigen:** Entwickler und Systemadministratoren über die geplanten Scan-Zeitpunkte informieren, um Verwirrungen im Monitoring zu vermeiden.
