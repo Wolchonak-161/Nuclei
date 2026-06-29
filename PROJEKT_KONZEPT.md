@@ -1,6 +1,6 @@
-# Sicherheitskonzept: Automatisierte Pentest-Pipeline mit Nuclei & Linear
+# Sicherheitskonzept: Automatisierte Pentest-Pipeline (EINT-103) mit Nuclei & Linear
 
-Dieses Dokument beschreibt das Konzept, den Projektplan, die Machbarkeit und die Integration einer kontinuierlichen Sicherheitsüberprüfung der Panos.ai Infrastruktur mittels **Nuclei** und **Linear**.
+Dieses Dokument beschreibt das Konzept, den Projektplan, die Machbarkeit und die Integration einer kontinuierlichen Sicherheitsüberprüfung der Panos.ai Infrastruktur mittels **Nuclei** und **Linear** im Rahmen des Tickets **EINT-103**.
 
 ---
 
@@ -81,34 +81,48 @@ Um langfristige AWS-Zugangsdaten (AWS Access Key ID & Secret Access Key) zu verm
 - Diese Rolle besitzt ausschließlich Leserechte (ReadOnly) auf die zu überprüfenden Ressourcen (z. B. S3 Bucket Configurations, Route 53 DNS). Dadurch entfällt das Risiko von credential leaks vollständig.
 
 ### Rechtlicher Rahmen
-- **Owner Consent & Scope:** Automatisierte Scans dürfen rechtlich nur gegen Server und Domains ausgeführt werden, für die Panos.ai die explizite Eigentümerschaft besitzt und für die ein schriftliches Einverständnis der Geschäftsführung / des CTOs vorliegt.
+- **Owner Consent & Scope:** Automatisierte Scans dürfen rechtlich nur gegen Server und domains ausgeführt werden, für die Panos.ai die explizite Eigentümerschaft besitzt und für die ein schriftliches Einverständnis der Geschäftsführung / des CTOs vorliegt.
 - **Konformität (Deutschland/EU):** Unberechtigtes Scannen fremder Systeme fällt unter § 202a StGB (Ausspähen von Daten) oder entsprechende EU-Richtlinien. Unsere Pipeline läuft durch die Beschränkung auf eigene Staging-Umgebungen in einem sicheren, legalen Rahmen.
 
 ---
 
-## 5. Projekt-Struktur & Implementierung
+## 5. Projekt-Struktur (Alignment mit `ext-interns-cybersecurity`)
 
-### Struktur des Repositories
-Die Integration wird in einem dedizierten Git-Repository verwaltet:
+Um eine saubere Abgrenzung zwischen den verschiedenen Sicherheits-Tools (z. B. Nuclei, Nmap, Trivy) bezüglich Konfiguration, Dokumentation und Output zu gewährleisten, erfolgt die Integration in die Verzeichnisstruktur des zentralen `ext-interns-cybersecurity`-Repositorys wie folgt:
+
 ```
-panos-ai-pentest/
-├── .github/workflows/      # GitHub Actions Workflows für automatisierte Scans
-├── templates/              # Custom Nuclei Templates (YAML)
-│   ├── js-bundle-token-leakage.yaml
-│   ├── panos-hono-security-headers.yaml
-│   └── panos-nextjs-config-leak.yaml
-├── scripts/                # Hilfsscripte für Automatisierung & Integration
-│   ├── nuclei-to-linear.ts # Parser & Linear-Ticket-Erstellung
-│   └── list-teams.ts       # Utility zur Konfiguration von Linear-Teams
-├── package.json            # Node.js Abhängigkeiten (Linear SDK, TS-Node)
-└── .gitignore              # Schutz von lokalen Testergebnissen und .env-Dateien
+ext-interns-cybersecurity/
+├── .github/
+│   └── workflows/
+│       ├── nuclei-security-scan.yml    # Dedizierter Workflow für Nuclei-Scans
+│       └── [andere-tools]-scan.yml     # Workflows anderer Tools (sauber getrennt)
+└── 2_Identify/
+    └── ID.RA-1_Risk_Assessment/
+        └── Pentesting/
+            ├── README.md               # Gesamt-Dokumentation & Übersicht der Tools
+            └── nuclei/                 # Eigener Ordner für alle Nuclei-Assets
+                ├── README.md           # Nuclei-spezifische Anleitung & Setup-Info
+                ├── templates/          # Custom Nuclei Templates (YAML)
+                │   ├── js-bundle-token-leakage.yaml
+                │   ├── panos-hono-security-headers.yaml
+                │   └── panos-nextjs-config-leak.yaml
+                ├── scripts/            # Automatisierungs- & Parser-Skripte
+                │   ├── nuclei-to-linear.ts
+                │   └── list-teams.ts
+                ├── package.json
+                └── .gitignore          # Ignoriert lokale result.json & .env-Dateien
 ```
+
+### Vorteile dieser Struktur (Abstimmung mit @rené):
+- **Kein Tool-Clutter:** Configs, Parser und Hilfsskripte von Nuclei liegen isoliert im `nuclei/`-Unterordner und überschneiden sich nicht mit anderen Security-Tools im `Pentesting/`-Verzeichnis.
+- **Modulare CI/CD Workflows:** Im Verzeichnis `.github/workflows/` wird für jedes Tool ein separater Workflow (z. B. `nuclei-security-scan.yml`) definiert. Dies ermöglicht es, Scans unabhängig voneinander nach verschiedenen Triggern (z. B. Code Push vs. wöchentlicher Cron) auszuführen.
+- **Strikte Output-Separation:** Zwischenergebnisse und Reports werden entweder direkt ins Linear-Board exportiert oder lokal im Tool-Verzeichnis (`recon_summary.md`) abgelegt. Es gibt kein gemeinsames, ungeordnetes "Output-Verzeichnis".
 
 ### Implementierungs-Workflow (CI/CD)
 
 ```mermaid
 graph TD
-    A[Code Push / Release] --> B[GitHub Action triggert Nuclei Scan]
+    A[Code Push / Release] --> B[GitHub Action: nuclei-security-scan.yml]
     B --> C[Nuclei führt Custom & Standard Scans aus]
     C --> D[Ergebnisse werden als results.json exportiert]
     D --> E[TypeScript Script verarbeitet results.json]
@@ -137,9 +151,9 @@ Um Ticket-Spam im Entwickler-Board zu vermeiden und kritische Releases abzusiche
 
 ---
 
-## 7. Projektplan & Meilensteine (3-Wochen-Plan)
+## 7. Projektplan & Meilensteine (Aktivitäten für EINT-103)
 
-Für die Überwachung des Bearbeitungsfortschritts wurden entsprechende Issues im Linear-Board angelegt:
+Für die Überwachung des Bearbeitungsfortschritts der verbleibenden Wochen deines Praktikums wurden die folgenden Meilensteine in Linear angelegt:
 
 ### Woche 1: Fundament & Scoping
 * **Meilenstein 1.1: Nuclei CLI Setup & Basics**
@@ -161,7 +175,7 @@ Für die Überwachung des Bearbeitungsfortschritts wurden entsprechende Issues i
 * **Meilenstein 3.1: Parsing & Filtering Script**
   - Entwicklung des Skripts zur Strukturierung der JSON-Outputs.
 * **Meilenstein 3.2: Linear SDK & Deduplizierung**
-  - Anbindung an das Linear-Board und Schutz vor doppelten Tickets.
+  - Anbindung an das Linear-Board und Schutz vor doppelten Tickets (EINT-103 Integration).
 * **Meilenstein 3.3: CI/CD-Pipeline Automation**
   - Integration als GitHub Action für regelmäßige automatische Scans.
 * **Meilenstein 3.4: Dokumentation & Abschlusspräsentation**
@@ -179,5 +193,5 @@ Vor dem vollständigen Rollout der Pentest-Pipeline in der CI/CD-Pipeline müsse
 - [ ] **4. AWS OIDC konfigurieren:** Einrichtung des OpenID Connect Identity Providers und IAM Role Assumption in AWS für die passwortlose Authentifizierung.
 - [ ] **5. False Positive Profile anlegen:** Konfiguration der Filter für bekannte, akzeptierte Befunde, um Rauschen im Reporting zu verhindern.
 - [ ] **6. Sync-Skript testen:** Manueller Testlauf des `nuclei-to-linear.ts` Skripts und Validierung der Deduplizierung im Linear Board.
-- [ ] **7. GitHub Actions Workflow aktivieren:** Einspielen der `.github/workflows/security-scan.yml` und Test des Schedule-Crons.
+- [ ] **7. GitHub Actions Workflow aktivieren:** Einspielen der `.github/workflows/nuclei-security-scan.yml` und Test des Schedule-Crons.
 - [ ] **8. Team benachrichtigen:** Entwickler und Systemadministratoren über die geplanten Scan-Zeitpunkte informieren, um Verwirrungen im Monitoring zu vermeiden.
