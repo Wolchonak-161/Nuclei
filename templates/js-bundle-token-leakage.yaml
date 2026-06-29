@@ -1,0 +1,207 @@
+id: js-bundle-token-leakage
+
+info:
+  name: JavaScript Bundle Token & Secret Leakage Scanner
+  author: security-researcher
+  severity: high
+  description: |
+    Detects hardcoded tokens, API keys, secrets, and credentials leaked inside
+    JavaScript bundles (e.g. webpack, Vite, Rollup, Parcel, Next.js, CRA).
+    Covers AWS, GCP, Azure, Stripe, Twilio, GitHub, Slack, SendGrid, JWT,
+    generic bearer tokens, private keys, and common secret variable patterns.
+  metadata:
+    max-request: 30
+  tags: exposure,token,secret,js,bundle,api-key,leak
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. JS BUNDLE DISCOVERY
+#    Fingerprint common bundle paths so the matcher runs against real assets.
+# ─────────────────────────────────────────────────────────────────────────────
+http:
+  # ── Webpack / CRA / Vite / Next.js common bundle paths ────────────────────
+  - method: GET
+    path:
+      - "{{BaseURL}}/static/js/main.chunk.js"
+      - "{{BaseURL}}/static/js/bundle.js"
+      - "{{BaseURL}}/static/js/app.js"
+      - "{{BaseURL}}/static/js/index.js"
+      - "{{BaseURL}}/assets/index.js"
+      - "{{BaseURL}}/assets/main.js"
+      - "{{BaseURL}}/dist/bundle.js"
+      - "{{BaseURL}}/dist/main.js"
+      - "{{BaseURL}}/dist/app.js"
+      - "{{BaseURL}}/js/app.js"
+      - "{{BaseURL}}/js/bundle.js"
+      - "{{BaseURL}}/_next/static/chunks/main.js"
+      - "{{BaseURL}}/_next/static/chunks/pages/_app.js"
+      - "{{BaseURL}}/_next/static/chunks/webpack.js"
+      - "{{BaseURL}}/nuxt/dist/client/app.js"
+      - "{{BaseURL}}/vendor.js"
+      - "{{BaseURL}}/runtime.js"
+
+    stop-at-first-match: false
+
+    matchers-condition: and
+    matchers:
+      # Must be a JavaScript content-type or look like JS
+      - type: word
+        part: header
+        words:
+          - "application/javascript"
+          - "text/javascript"
+          - "application/x-javascript"
+        condition: or
+
+      # Must contain at least one secret-like pattern
+      - type: regex
+        part: body
+        condition: or
+        regex:
+          # ── AWS ──────────────────────────────────────────────────────────
+          - '(?i)(AKIA|ASIA|AROA|AIDA|ANOL|ANPA|ANVA|APKA)[0-9A-Z]{16}'
+          - '(?i)aws.{0,30}(secret|access).{0,10}[=:]["\s]?[A-Za-z0-9/+=]{40}'
+          - '(?i)(aws_access_key_id|aws_secret_access_key)\s*[=:]\s*["\x27]?[A-Za-z0-9/+]{16,40}'
+
+          # ── Google / GCP ──────────────────────────────────────────────────
+          - 'AIza[0-9A-Za-z_\-]{35}'
+          - '(?i)(google|gcp).{0,30}(api.?key|token).{0,10}[=:]\s*["\x27]?[A-Za-z0-9_\-]{20,50}'
+
+          # ── GitHub ───────────────────────────────────────────────────────
+          - 'gh[pousr]_[A-Za-z0-9]{36,255}'
+          - 'github_pat_[A-Za-z0-9_]{80,255}'
+          - '(?i)github.{0,30}(token|secret|key).{0,10}[=:]\s*["\x27]?[A-Za-z0-9_\-]{20,50}'
+
+          # ── Stripe ───────────────────────────────────────────────────────
+          - '(?i)(sk|pk|rk)_(live|test)_[0-9a-zA-Z]{24,}'
+
+          # ── Twilio ───────────────────────────────────────────────────────
+          - 'SK[0-9a-fA-F]{32}'
+          - 'AC[0-9a-fA-F]{32}'
+
+          # ── Slack ────────────────────────────────────────────────────────
+          - 'xox[baprs]-[0-9A-Za-z\-]{10,72}'
+          - '(?i)slack.{0,30}(token|webhook).{0,10}[=:]\s*["\x27]?(xox[baprs]-[0-9A-Za-z\-]{10,72}|https://hooks\.slack\.com/services/[A-Za-z0-9/]+)'
+
+          # ── SendGrid ─────────────────────────────────────────────────────
+          - 'SG\.[0-9A-Za-z\-_]{22}\.[0-9A-Za-z\-_]{43}'
+
+          # ── Mailgun ──────────────────────────────────────────────────────
+          - '(?i)key-[0-9a-zA-Z]{32}'
+
+          # ── JWT ──────────────────────────────────────────────────────────
+          - 'ey[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'
+
+          # ── Private keys ─────────────────────────────────────────────────
+          - '-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY( BLOCK)?-----'
+
+          # ── Azure ────────────────────────────────────────────────────────
+          - '(?i)(AccountKey|SharedAccessKey)\s*[=:]\s*["\x27]?[A-Za-z0-9+/]{40,100}={0,2}'
+          - '(?i)azure.{0,30}(client.?secret|api.?key).{0,10}[=:]\s*["\x27]?[A-Za-z0-9_\-\.~]{20,60}'
+
+          # ── Twitch ───────────────────────────────────────────────────────
+          - '(?i)twitch.{0,30}(client.?secret|token).{0,10}[=:]\s*["\x27]?[A-Za-z0-9]{20,50}'
+
+          # ── Facebook / Meta ───────────────────────────────────────────────
+          - 'EAACEdEose0cBA[0-9A-Za-z]+'
+          - '(?i)(fb|facebook).{0,30}(app.?secret|access.?token).{0,10}[=:]\s*["\x27]?[0-9A-Za-z]{20,100}'
+
+          # ── Shopify ──────────────────────────────────────────────────────
+          - 'shpss_[0-9a-fA-F]{32}'
+          - 'shpat_[0-9a-fA-F]{32}'
+          - 'shpca_[0-9a-fA-F]{32}'
+          - 'shppa_[0-9a-fA-F]{32}'
+
+          # ── HuggingFace ───────────────────────────────────────────────────
+          - 'hf_[A-Za-z]{34}'
+
+          # ── OpenAI ───────────────────────────────────────────────────────
+          - 'sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}'
+          - 'sk-proj-[A-Za-z0-9_\-]{40,200}'
+
+          # ── Generic high-confidence patterns ─────────────────────────────
+          - '(?i)(api.?key|api.?token|app.?secret|auth.?token|client.?secret|private.?key|secret.?key|access.?token|bearer.?token)\s*[=:]\s*["\x27][A-Za-z0-9_\-\.~+/]{16,120}["\x27]'
+
+          # ── Hardcoded password in JS variable ─────────────────────────────
+          - '(?i)(password|passwd|pwd)\s*[=:]\s*["\x27][^"\x27\s]{8,}["\x27]'
+
+          # ── Connection strings ─────────────────────────────────────────────
+          - '(?i)(mongodb(\+srv)?|postgresql|mysql|redis|amqp)://[^"\x27\s]{10,}'
+
+    extractors:
+      - type: regex
+        name: aws_access_key
+        part: body
+        group: 0
+        regex:
+          - '(AKIA|ASIA|AROA|AIDA)[0-9A-Z]{16}'
+
+      - type: regex
+        name: google_api_key
+        part: body
+        group: 0
+        regex:
+          - 'AIza[0-9A-Za-z_\-]{35}'
+
+      - type: regex
+        name: github_token
+        part: body
+        group: 0
+        regex:
+          - 'gh[pousr]_[A-Za-z0-9]{36,255}'
+          - 'github_pat_[A-Za-z0-9_]{80,255}'
+
+      - type: regex
+        name: stripe_key
+        part: body
+        group: 0
+        regex:
+          - '(sk|pk|rk)_(live|test)_[0-9a-zA-Z]{24,}'
+
+      - type: regex
+        name: slack_token
+        part: body
+        group: 0
+        regex:
+          - 'xox[baprs]-[0-9A-Za-z\-]{10,72}'
+
+      - type: regex
+        name: sendgrid_key
+        part: body
+        group: 0
+        regex:
+          - 'SG\.[0-9A-Za-z\-_]{22}\.[0-9A-Za-z\-_]{43}'
+
+      - type: regex
+        name: jwt_token
+        part: body
+        group: 0
+        regex:
+          - 'ey[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}'
+
+      - type: regex
+        name: openai_key
+        part: body
+        group: 0
+        regex:
+          - 'sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}'
+          - 'sk-proj-[A-Za-z0-9_\-]{40,200}'
+
+      - type: regex
+        name: private_key_header
+        part: body
+        group: 0
+        regex:
+          - '-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY( BLOCK)?-----'
+
+      - type: regex
+        name: connection_string
+        part: body
+        group: 0
+        regex:
+          - '(?i)(mongodb(\+srv)?|postgresql|mysql|redis|amqp)://[^"\x27\s]{10,}'
+
+      # Emit the matching bundle URL for context
+      - type: kval
+        part: header
+        kval:
+          - Content-Type

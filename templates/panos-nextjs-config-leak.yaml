@@ -1,0 +1,34 @@
+id: panos-nextjs-config-leak
+info:
+  name: Next.js Configuration and Environment Leak
+  author: panos-security
+  severity: high
+  description: Checks for exposed Next.js environment files and configuration files which might contain sensitive API keys (Linear, Hubspot, AWS, etc.).
+  tags: nextjs, config, exposure, panos
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/.env"
+      - "{{BaseURL}}/.env.local"
+      - "{{BaseURL}}/.env.production"
+      - "{{BaseURL}}/next.config.js"
+      - "{{BaseURL}}/_next/data/"
+
+    # Wir suchen entweder nach erfolgreichen HTTP 200 Antworten 
+    # ODER nach spezifischen Strings, die auf Leaks hindeuten.
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        words:
+          - "NEXT_PUBLIC_"
+          - "DATABASE_URL"
+          - "NEXT_AUTH_SECRET"
+          - "lin_api_"     # Linear API Key Muster
+          - "AKIA"         # AWS Access Key Muster
+          - "module.exports"
+        condition: or

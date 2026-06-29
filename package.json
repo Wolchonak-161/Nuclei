@@ -1,0 +1,18 @@
+{
+  "name": "panos-ai-pentest",
+  "version": "1.0.0",
+  "description": "Pentesting tooling and linear integration for Panos.ai",
+  "main": "index.js",
+  "scripts": {
+    "sync-tickets": "ts-node scripts/nuclei-to-linear.ts"
+  },
+  "dependencies": {
+    "@linear/sdk": "^13.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.3"
+  }
+}

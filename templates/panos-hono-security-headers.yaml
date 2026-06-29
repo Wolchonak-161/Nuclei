@@ -1,0 +1,36 @@
+id: panos-hono-security-headers
+info:
+  name: Hono API Missing Security Headers & CORS
+  author: panos-security
+  severity: medium
+  description: Checks if the Hono API responses are missing fundamental security headers (like HSTS) or have overly permissive CORS configurations.
+  tags: hono, api, misconfig, panos
+
+requests:
+  - method: GET
+    path:
+      - "{{BaseURL}}/api/"
+      - "{{BaseURL}}/health"
+      - "{{BaseURL}}/"
+    
+    headers:
+      Origin: "https://evil.com" # Testen auf permissive CORS
+
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      # Checkt, ob *irgendeines* der folgenden Sicherheitsrisiken vorliegt
+      - type: dsl
+        dsl:
+          # Fehlender HSTS Header
+          - '!contains(tolower(header), "strict-transport-security")'
+          # Fehlender Content-Type-Options Header
+          - '!contains(tolower(header), "x-content-type-options")'
+          # Permissives CORS (Allow-Origin: *)
+          - 'contains(tolower(header), "access-control-allow-origin: *")'
+          # Permissives CORS (Reflected Origin)
+          - 'contains(tolower(header), "access-control-allow-origin: https://evil.com")'
+        condition: or
