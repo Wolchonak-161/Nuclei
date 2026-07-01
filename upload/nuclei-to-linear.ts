@@ -29,13 +29,27 @@ interface NucleiResult {
     "extracted-results"?: string[];
 }
 
+function getTimestampString(): string {
+    const now = new Date();
+    const pad = (num: number) => String(num).padStart(2, '0');
+    
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1);
+    const day = pad(now.getDate());
+    const hours = pad(now.getHours());
+    const minutes = pad(now.getMinutes());
+    const seconds = pad(now.getSeconds());
+    
+    return `scan_${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+}
+
 async function run() {
     // Nimmt die Datei aus dem ersten Argument oder sucht nach "results.json"
     const resultsPath = path.resolve(process.cwd(), process.argv[2] || 'results.json');
     
     if (!fs.existsSync(resultsPath)) {
         console.error(`ERROR: Nuclei results Datei nicht gefunden: ${resultsPath}`);
-        console.error(`Usage: npx ts-node scripts/nuclei-to-linear.ts <path-to-results.json>`);
+        console.error(`Usage: npx ts-node upload/nuclei-to-linear.ts <path-to-results.json>`);
         process.exit(1);
     }
 
@@ -61,32 +75,72 @@ async function run() {
     const actionableFindings = validFindings.filter(f => f.info.severity.toLowerCase() !== 'info');
     const infoFindings = validFindings.filter(f => f.info.severity.toLowerCase() === 'info');
 
-    // 1. INFO-Findings verarbeiten -> Lokaler Report (recon_summary.md)
+    // 1. Versionierten Output-Ordner anlegen & Dateien speichern
+    const timestamp = getTimestampString();
+    const outputDir = path.resolve(process.cwd(), 'outputs', timestamp);
+    if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Kopiere rohe Ergebnisse in den versionierten Ordner
+    fs.copyFileSync(resultsPath, path.join(outputDir, 'results.json'));
+    console.log(`📦 Saved raw scan results to: outputs/${timestamp}/results.json`);
+
+    // INFO-Findings verarbeiten -> Run-spezifischer Report
+    let mdContent = `# 🕵️‍♂️ Reconnaissance Summary\n\n**Run Timestamp:** ${timestamp}\n\n`;
     if (infoFindings.length > 0) {
-        const reconPath = path.resolve(process.cwd(), 'recon_summary.md');
-        let mdContent = '# 🕵️‍♂️ Reconnaissance Summary\n\n| Template | Target | Description |\n|---|---|---|\n';
+        mdContent += `| Template | Target | Description |\n|---|---|---|\n`;
         for (const finding of infoFindings) {
             mdContent += `| ${finding["template-id"]} | ${finding["matched-at"]} | ${finding.info.name} |\n`;
         }
-        fs.writeFileSync(reconPath, mdContent);
-        console.log(`✅ Saved ${infoFindings.length} info findings to recon_summary.md`);
+    } else {
+        mdContent += `*No informational findings were detected in this run.*\n`;
     }
+    fs.writeFileSync(path.join(outputDir, 'recon_summary.md'), mdContent);
+    console.log(`✅ Saved run summary to: outputs/${timestamp}/recon_summary.md`);
 
     // 2. ACTIONABLE Findings verarbeiten -> Linear Tickets
     console.log(`🚀 Processing ${actionableFindings.length} actionable findings for Linear...`);
     
-    // Hole bestehende Tickets aus dem Team, um Duplikate zu vermeiden
+    // Hole bestehende Tickets aus dem Team, um Duplikate zu vermeiden bzw. zu verwalten
     const existingIssues = await linearClient.issues({
         filter: { team: { id: { eq: LINEAR_TEAM_ID } }, state: { type: { neq: "completed" } } }
     });
 
+    const activeNucleiIssues = existingIssues.nodes.filter(issue => issue.title.startsWith('[Nuclei] '));
+    const currentActionableTitles = actionableFindings.map(finding => `[Nuclei] ${finding.info.name} an ${finding["matched-at"]}`);
+
+    // A. Auto-Closing / Resolution:
+    // Falls ein aktives [Nuclei] Ticket nicht mehr in der aktuellen Scan-Ergebnisliste ist,
+    // wurde die Schwachstelle behoben. Wir schließen das Ticket automatisch.
+    const team = await linearClient.team(LINEAR_TEAM_ID);
+    const teamStates = await team.states();
+    const completedState = teamStates.nodes.find(s => s.type === 'completed');
+
+    for (const issue of activeNucleiIssues) {
+        if (!currentActionableTitles.includes(issue.title)) {
+            console.log(`🧹 Vulnerability no longer detected: "${issue.title}". Resolving ticket...`);
+            if (completedState) {
+                try {
+                    await linearClient.updateIssue(issue.id, { stateId: completedState.id });
+                    console.log(`✅ Automatically resolved ticket: "${issue.title}"`);
+                } catch (error) {
+                    console.error(`❌ Failed to automatically resolve ticket: "${issue.title}":`, error);
+                }
+            } else {
+                console.warn(`⚠️ Could not find a 'completed' state for team to close ticket: "${issue.title}"`);
+            }
+        }
+    }
+
+    // B. Neue Tickets anlegen:
     for (const finding of actionableFindings) {
         const title = `[Nuclei] ${finding.info.name} an ${finding["matched-at"]}`;
         
         // Deduplizierung: Prüfe, ob der Titel schon existiert
         const isDuplicate = existingIssues.nodes.some(issue => issue.title === title);
         if (isDuplicate) {
-            console.log(`⏭️  Skipping duplicate: ${title}`);
+            console.log(`⏭️  Skipping duplicate/already active: ${title}`);
             continue;
         }
 
@@ -108,7 +162,7 @@ ${finding["extracted-results"] ? `**Extrahierte Daten**:\n\`\`\`\n${finding["ext
             case 'critical': priority = 1; break;
             case 'high': priority = 2; break;
             case 'medium': priority = 3; break;
-            case 'low': priority = 4; break; // Low Prio -> wandert meist automatisch ins Backlog
+            case 'low': priority = 4; break; 
         }
 
         try {

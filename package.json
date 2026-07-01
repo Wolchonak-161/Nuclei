@@ -4,7 +4,7 @@
   "description": "Pentesting tooling and linear integration for Panos.ai",
   "main": "index.js",
   "scripts": {
-    "sync-tickets": "ts-node scripts/nuclei-to-linear.ts"
+    "sync-tickets": "ts-node upload/nuclei-to-linear.ts"
   },
   "dependencies": {
     "@linear/sdk": "^13.0.0",

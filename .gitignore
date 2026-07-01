@@ -10,6 +10,7 @@ node_modules/
 results.json
 test-results.json
 recon_summary.md
+outputs/scan_*
 
 # Logs
 *.log
