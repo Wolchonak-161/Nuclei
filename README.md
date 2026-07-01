@@ -121,4 +121,3 @@ Findings are categorized and gated as follows:
 
 ## 📄 Documentation & Resources
 * For a detailed explanation of the security strategy and legal framework, read [PROJEKT_KONZEPT.md](file:///Users/tk/.gemini/antigravity/scratch/panos-ai-pentest/PROJEKT_KONZEPT.md).
-* For internship milestones and deliverables, view [eint-501.md](file:///Users/tk/.gemini/antigravity/scratch/panos-ai-pentest/eint-501.md).
