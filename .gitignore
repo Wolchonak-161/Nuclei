@@ -6,11 +6,11 @@ node_modules/
 .env.local
 .env.production
 
-# Scan results and summaries
+# Scan results (root-level temp files only — versioned outputs/ are committed)
 results.json
 test-results.json
+test-results-fixed.json
 recon_summary.md
-outputs/scan_*
 
 # Logs
 *.log
